@@ -1,5 +1,6 @@
 import { Observable } from 'rxjs';
-import { EntityActionOptions, MergeStrategy } from '../actions/entity-action';
+import { EntityActionOptions } from '../actions/entity-action';
+import { MergeStrategy } from '../actions/merge-strategy';
 import { QueryParams } from '../dataservices/interfaces';
 
 /** Commands that dispatch entity actions for a collection */
@@ -104,7 +105,7 @@ export interface EntityCacheCommands<T> {
   addManyToCache(entities: T[], options?: EntityActionOptions): void;
 
   /** Clear the cached entity collection */
-  clearCache(): void;
+  clearCache(options?: EntityActionOptions): void;
 
   /**
    * Remove an entity directly from the cache.

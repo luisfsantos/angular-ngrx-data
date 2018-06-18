@@ -38,18 +38,6 @@ export enum EntityOp {
   SAVE_UPDATE_ONE_SUCCESS = 'ngrx-data/save/update-one/success',
   SAVE_UPDATE_ONE_ERROR = 'ngrx-data/save/update-one/error',
 
-  SAVE_ADD_ONE_OPTIMISTIC = 'ngrx-data/save/add-one/optimistic',
-  SAVE_ADD_ONE_OPTIMISTIC_ERROR = 'ngrx-data/save/add-one/optimistic/error',
-  SAVE_ADD_ONE_OPTIMISTIC_SUCCESS = 'ngrx-data/save/add-one/optimistic/success',
-
-  SAVE_DELETE_ONE_OPTIMISTIC = 'ngrx-data/save/delete-one/optimistic',
-  SAVE_DELETE_ONE_OPTIMISTIC_SUCCESS = 'ngrx-data/save/delete-one/optimistic/success',
-  SAVE_DELETE_ONE_OPTIMISTIC_ERROR = 'ngrx-data/save/delete-one/optimistic/error',
-
-  SAVE_UPDATE_ONE_OPTIMISTIC = 'ngrx-data/save/update-one/optimistic',
-  SAVE_UPDATE_ONE_OPTIMISTIC_SUCCESS = 'ngrx-data/save/update-one/optimistic/success',
-  SAVE_UPDATE_ONE_OPTIMISTIC_ERROR = 'ngrx-data/save/update-one/optimistic/error',
-
   // Cache operations
   ADD_ALL = 'ngrx-data/add-all',
   ADD_MANY = 'ngrx-data/add-many',

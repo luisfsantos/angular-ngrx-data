@@ -30,20 +30,20 @@ export class DefaultPersistenceResultHandler implements PersistenceResultHandler
 
   /** Handle successful result of persistence operation on an EntityAction */
   handleSuccess(originalAction: EntityAction): (data: any) => Action {
-    const successOp = <EntityOp>(originalAction.payload.op + OP_SUCCESS);
-    return (data: any) => this.entityActionFactory.createFromAction(originalAction, { op: successOp, data });
+    const successOp = <EntityOp>(originalAction.payload.entityOp + OP_SUCCESS);
+    return (data: any) => this.entityActionFactory.createFromAction(originalAction, { entityOp: successOp, data });
   }
 
   /** Handle error result of persistence operation on an EntityAction */
   handleError(originalAction: EntityAction): (error: DataServiceError | Error) => EntityAction<EntityActionDataServiceError> {
-    const errorOp = <EntityOp>(originalAction.payload.op + OP_ERROR);
+    const errorOp = <EntityOp>(originalAction.payload.entityOp + OP_ERROR);
     return (error: DataServiceError | Error) => {
       if (error instanceof Error) {
         error = new DataServiceError(error, null);
       }
       this.logger.error(error);
       const errorAction = this.entityActionFactory.createFromAction<EntityActionDataServiceError>(originalAction, {
-        op: errorOp,
+        entityOp: errorOp,
         data: { error, originalAction }
       });
       return errorAction;

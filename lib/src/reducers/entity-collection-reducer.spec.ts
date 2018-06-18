@@ -1,7 +1,7 @@
 import { Action } from '@ngrx/store';
 import { EntityAdapter } from '@ngrx/entity';
 
-import { EntityAction } from '../actions/entity-action';
+import { EntityAction, EntityActionOptions } from '../actions/entity-action';
 import { EntityActionFactory } from '../actions/entity-action-factory';
 import { EntityOp } from '../actions/entity-op';
 import { EntityCollection, ChangeState, ChangeStateMap, ChangeType } from './entity-collection';
@@ -41,9 +41,12 @@ const metadata: EntityMetadataMap = {
 describe('EntityCollectionReducer', () => {
   // action factory never changes in these tests
   const entityActionFactory = new EntityActionFactory();
-  const createAction: (entityName: string, op: EntityOp, payload?: any) => EntityAction = entityActionFactory.create.bind(
-    entityActionFactory
-  );
+  const createAction: (
+    entityName: string,
+    op: EntityOp,
+    data?: any,
+    options?: EntityActionOptions
+  ) => EntityAction = entityActionFactory.create.bind(entityActionFactory);
 
   const toHeroUpdate = toUpdateFactory<Hero>();
 
@@ -72,8 +75,6 @@ describe('EntityCollectionReducer', () => {
 
   // Tests for EntityCache-level actions (e.g., SET_ENTITY_CACHE) are in `entity-reducer.spec.ts`
 
-  // TODO: The QUERY_ALL tests are actually for QUERY_LOAD. QUERY_ALL does a merge. Add QUERY_ALL tests.
-
   describe('#QUERY_ALL', () => {
     const queryAction = createAction('Hero', EntityOp.QUERY_ALL);
 
@@ -85,7 +86,7 @@ describe('EntityCollectionReducer', () => {
       expect(collection.loading).toBe(true, 'should be loading');
     });
 
-    it('QUERY_ALL_SUCCESS clears loading flag and fills collection', () => {
+    it('QUERY_ALL_SUCCESS can create the initial collection', () => {
       let state = entityReducer({}, queryAction);
       const heroes: Hero[] = [{ id: 2, name: 'B' }, { id: 1, name: 'A' }];
       const action = createAction('Hero', EntityOp.QUERY_ALL_SUCCESS, heroes);
@@ -94,15 +95,22 @@ describe('EntityCollectionReducer', () => {
       expect(collection.ids).toEqual([2, 1], 'should have expected ids in load order');
       expect(collection.entities['1']).toBe(heroes[1], 'hero with id:1');
       expect(collection.entities['2']).toBe(heroes[0], 'hero with id:2');
+    });
+
+    it('QUERY_ALL_SUCCESS sets the loaded flag and clears loading flag', () => {
+      let state = entityReducer({}, queryAction);
+      const heroes: Hero[] = [{ id: 2, name: 'B' }, { id: 1, name: 'A' }];
+      const action = createAction('Hero', EntityOp.QUERY_ALL_SUCCESS, heroes);
+      state = entityReducer(state, action);
+      const collection = state['Hero'];
       expect(collection.loaded).toBe(true, 'should be loaded');
       expect(collection.loading).toBe(false, 'should not be loading');
     });
 
-    it('QUERY_ALL_SUCCESS clears changeSet', () => {
+    it('QUERY_ALL_SUCCESS overwrites changeState.originalValue for updated entity', () => {
       // tslint:disable-next-line:prefer-const
       let { entityCache, preUpdatedEntity, updatedEntity } = createTestTrackedEntities();
 
-      // Completely replaces existing Hero entities
       const heroes: Hero[] = [{ id: 100, name: 'X' }, { ...updatedEntity, name: 'Queried update' }];
       const action = createAction('Hero', EntityOp.QUERY_ALL_SUCCESS, heroes);
       entityCache = entityReducer(entityCache, action);
@@ -110,30 +118,6 @@ describe('EntityCollectionReducer', () => {
       const { entities, changeState } = entityCache['Hero'];
       expect(changeState[updatedEntity.id].originalValue).not.toBe(preUpdatedEntity, 'no longer the initial entity');
       expect(changeState[updatedEntity.id].originalValue).toBe(updatedEntity, 'originalValue is now the queried entity');
-    });
-
-    it('QUERY_ALL_SUCCESS fills empty collection contents with queried entities', () => {
-      let state: EntityCache = {
-        Hero: {
-          entityName: 'Hero',
-          ids: [42],
-          entities: { 42: { id: 42, name: 'Fribit' } },
-          filter: 'xxx',
-          loaded: true,
-          loading: false,
-          changeState: {}
-        }
-      };
-      state = entityReducer(state, queryAction);
-      const heroes: Hero[] = [{ id: 2, name: 'B' }, { id: 1, name: 'A' }];
-      const action = createAction('Hero', EntityOp.QUERY_ALL_SUCCESS, heroes);
-      state = entityReducer(state, action);
-      const collection = state['Hero'];
-      expect(collection.ids).toEqual([2, 1], 'should have expected ids in load order');
-      expect(collection.entities['1']).toBe(heroes[1], 'hero with id:1');
-      expect(collection.entities['2']).toBe(heroes[0], 'hero with id:2');
-      expect(collection.loaded).toBe(true, 'should be loaded');
-      expect(collection.loading).toBe(false, 'should not be loading');
     });
 
     it('QUERY_ALL_ERROR clears loading flag and does not fill collection', () => {
@@ -157,6 +141,50 @@ describe('EntityCollectionReducer', () => {
       expect(collection.entities['2']).toBe(villains[0], 'villain with key:2');
       expect(collection.loaded).toBe(true, 'should be loaded');
       expect(collection.loading).toBe(false, 'should not be loading');
+    });
+
+    it('QUERY_ALL_SUCCESS can add to existing collection', () => {
+      let state = entityReducer(initialCache, queryAction);
+      const heroes: Hero[] = [{ id: 3, name: 'C' }];
+      const action = createAction('Hero', EntityOp.QUERY_ALL_SUCCESS, heroes);
+      state = entityReducer(state, action);
+      const collection = state['Hero'];
+
+      expect(collection.ids).toEqual([2, 1, 3], 'should have expected ids in load order');
+    });
+
+    it('QUERY_ALL_SUCCESS can update existing collection', () => {
+      let state = entityReducer(initialCache, queryAction);
+      const heroes: Hero[] = [{ id: 1, name: 'A+' }];
+      const action = createAction('Hero', EntityOp.QUERY_ALL_SUCCESS, heroes);
+      state = entityReducer(state, action);
+      const collection = state['Hero'];
+
+      expect(collection.ids).toEqual([2, 1], 'should have expected ids in load order');
+      expect(collection.entities['1'].name).toBe('A+', 'should update hero:1');
+    });
+
+    it('QUERY_ALL_SUCCESS can add and update existing collection', () => {
+      let state = entityReducer(initialCache, queryAction);
+      const heroes: Hero[] = [{ id: 3, name: 'C' }, { id: 1, name: 'A+' }];
+      const action = createAction('Hero', EntityOp.QUERY_ALL_SUCCESS, heroes);
+      state = entityReducer(state, action);
+      const collection = state['Hero'];
+
+      expect(collection.ids).toEqual([2, 1, 3], 'should have expected ids in load order');
+      expect(collection.entities['1'].name).toBe('A+', 'should update hero:1');
+    });
+
+    it('QUERY_ALL_SUCCESS works when the query results are empty', () => {
+      let state = entityReducer(initialCache, queryAction);
+      const action = createAction('Hero', EntityOp.QUERY_ALL_SUCCESS, []);
+      state = entityReducer(state, action);
+      const collection = state['Hero'];
+
+      expect(collection.entities).toBe(initialCache['Hero'].entities, 'collection.entities should be untouched');
+      expect(collection.ids).toBe(initialCache['Hero'].ids, 'collection.entities should be untouched');
+      expect(collection.ids).toEqual([2, 1], 'ids were not mutated');
+      expect(collection).not.toBe(initialCache['Hero'], 'collection changed by loading flag');
     });
   });
 
@@ -296,12 +324,96 @@ describe('EntityCollectionReducer', () => {
     });
   });
 
+  describe('#QUERY_LOAD', () => {
+    const queryAction = createAction('Hero', EntityOp.QUERY_LOAD);
+
+    it('QUERY_LOAD sets loading flag but does not fill collection', () => {
+      const state = entityReducer({}, queryAction);
+      const collection = state['Hero'];
+      expect(collection.ids.length).toBe(0, 'should be empty collection');
+      expect(collection.loaded).toBe(false, 'should not be loaded');
+      expect(collection.loading).toBe(true, 'should be loading');
+    });
+
+    it('QUERY_LOAD_SUCCESS fills collection, clears loading flag, and sets loaded flag', () => {
+      let state = entityReducer({}, queryAction);
+      const heroes: Hero[] = [{ id: 2, name: 'B' }, { id: 1, name: 'A' }];
+      const action = createAction('Hero', EntityOp.QUERY_LOAD_SUCCESS, heroes);
+      state = entityReducer(state, action);
+      const collection = state['Hero'];
+      expect(collection.ids).toEqual([2, 1], 'should have expected ids in load order');
+      expect(collection.entities['1']).toBe(heroes[1], 'hero with id:1');
+      expect(collection.entities['2']).toBe(heroes[0], 'hero with id:2');
+      expect(collection.loaded).toBe(true, 'should be loaded');
+      expect(collection.loading).toBe(false, 'should not be loading');
+    });
+
+    it('QUERY_LOAD_SUCCESS clears changeState', () => {
+      // tslint:disable-next-line:prefer-const
+      let { entityCache, preUpdatedEntity, updatedEntity } = createTestTrackedEntities();
+
+      // Completely replaces existing Hero entities
+      const heroes: Hero[] = [{ id: 1000, name: 'X' }, { ...updatedEntity, name: 'Queried update' }];
+      const action = createAction('Hero', EntityOp.QUERY_LOAD_SUCCESS, heroes);
+      entityCache = entityReducer(entityCache, action);
+
+      const { ids, changeState } = entityCache['Hero'] as EntityCollection<Hero>;
+      expect(changeState).toEqual({} as ChangeStateMap<Hero>);
+      expect(ids).toEqual([updatedEntity.id, 1000]);
+    });
+
+    it('QUERY_LOAD_SUCCESS replaces collection contents with queried entities', () => {
+      let state: EntityCache = {
+        Hero: {
+          entityName: 'Hero',
+          ids: [42],
+          entities: { 42: { id: 42, name: 'Fribit' } },
+          filter: 'xxx',
+          loaded: true,
+          loading: false,
+          changeState: {}
+        }
+      };
+      state = entityReducer(state, queryAction);
+      const heroes: Hero[] = [{ id: 2, name: 'B' }, { id: 1, name: 'A' }];
+      const action = createAction('Hero', EntityOp.QUERY_LOAD_SUCCESS, heroes);
+      state = entityReducer(state, action);
+      const collection = state['Hero'];
+      expect(collection.ids).toEqual([2, 1], 'should have expected ids in load order');
+      expect(collection.entities['1']).toBe(heroes[1], 'hero with id:1');
+      expect(collection.entities['2']).toBe(heroes[0], 'hero with id:2');
+    });
+
+    it('QUERY_LOAD_ERROR clears loading flag and does not fill collection', () => {
+      let state = entityReducer({}, queryAction);
+      const action = createAction('Hero', EntityOp.QUERY_LOAD_ERROR);
+      state = entityReducer(state, action);
+      const collection = state['Hero'];
+      expect(collection.loading).toBe(false, 'should not be loading');
+      expect(collection.loaded).toBe(false, 'should not be loaded');
+      expect(collection.ids.length).toBe(0, 'should be empty collection');
+    });
+
+    it('QUERY_LOAD_SUCCESS works for "Villain" entity with non-id primary key', () => {
+      let state = entityReducer({}, queryAction);
+      const villains: Villain[] = [{ key: '2', name: 'B' }, { key: '1', name: 'A' }];
+      const action = createAction('Villain', EntityOp.QUERY_LOAD_SUCCESS, villains);
+      state = entityReducer(state, action);
+      const collection = state['Villain'];
+      expect(collection.ids).toEqual(['2', '1'], 'should have expected ids in load order');
+      expect(collection.entities['1']).toBe(villains[1], 'villain with key:1');
+      expect(collection.entities['2']).toBe(villains[0], 'villain with key:2');
+      expect(collection.loaded).toBe(true, 'should be loaded');
+      expect(collection.loading).toBe(false, 'should not be loading');
+    });
+  });
+
   // Pessimistic SAVE_ADD_ONE operation should not touch the entities until success
   // See tests for this below
 
-  describe('#SAVE_ADD_ONE_OPTIMISTIC', () => {
+  describe('#SAVE_ADD_ONE (Optimistic)', () => {
     function createTestAction(hero: Hero) {
-      return createAction('Hero', EntityOp.SAVE_ADD_ONE_OPTIMISTIC, hero);
+      return createAction('Hero', EntityOp.SAVE_ADD_ONE, hero, { isOptimistic: true });
     }
 
     it('should add a new hero to collection', () => {
@@ -371,14 +483,14 @@ describe('EntityCollectionReducer', () => {
     });
   });
 
-  describe('#SAVE_ADD_ONE_OPTIMISTIC_SUCCESS', () => {
+  describe('#SAVE_ADD_ONE_SUCCESS (Optimistic)', () => {
     function createTestAction(hero: Hero) {
-      return createAction('Hero', EntityOp.SAVE_ADD_ONE_OPTIMISTIC_SUCCESS, hero);
+      return createAction('Hero', EntityOp.SAVE_ADD_ONE_SUCCESS, hero, { isOptimistic: true });
     }
 
-    // The hero was already added to the collection by SAVE_ADD_ONE_OPTIMISTIC.
+    // The hero was already added to the collection by SAVE_ADD_ONE.
     it('should NOT add a new hero to collection', () => {
-      // pretend this hero was added by SAVE_ADD_ONE_OPTIMISTIC and returned by server with changes
+      // pretend this hero was added by SAVE_ADD_ONE and returned by server with changes
       const hero: Hero = { id: 13, name: 'New One', power: 'Strong' };
       const action = createTestAction(hero);
       const state = entityReducer(initialCache, action);
@@ -387,11 +499,11 @@ describe('EntityCollectionReducer', () => {
       expect(collection.ids).toEqual([2, 1], 'should have same ids, no added hero');
     });
 
-    // The hero was already added to the collection by SAVE_ADD_ONE_OPTIMISTIC
-    // You cannot change the key with SAVE_ADD_ONE_OPTIMISTIC_SUCCESS
+    // The hero was already added to the collection by SAVE_ADD_ONE
+    // You cannot change the key with SAVE_ADD_ONE_SUCCESS
     // You'd have to do it with SAVE_UPDATE_ONE...
     it('should NOT change the id of a newly added hero', () => {
-      // pretend this hero was added by SAVE_ADD_ONE_OPTIMISTIC and returned by server with new ID
+      // pretend this hero was added by SAVE_ADD_ONE and returned by server with new ID
       const hero = initialHeroes[0];
       hero.id = 13;
 
@@ -411,7 +523,7 @@ describe('EntityCollectionReducer', () => {
       expect(action.payload.error.message).toMatch(/missing or invalid entity key/);
     });
 
-    // because the hero was already added to the collection by SAVE_ADD_ONE_OPTIMISTIC
+    // because the hero was already added to the collection by SAVE_ADD_ONE
     // should update values (but not id) if the server changed them
     // as it might with a concurrency property.
     it('should update an existing entity with that ID in collection', () => {
@@ -428,8 +540,8 @@ describe('EntityCollectionReducer', () => {
     });
   });
 
-  // Pessimistic SAVE_DELETE_ONE operation should not remove the entity until success
-  // See tests for this below
+  // TODO: Pessimistic SAVE_DELETE_ONE operation should not remove the entity until success
+  // TODO: Unless the entity is an ADD in which case it deletes immediately
 
   describe('#SAVE_DELETE_ONE (Pessimistic)', () => {
     it('should NOT remove the hero with SAVE_DELETE_ONE', () => {
@@ -479,14 +591,14 @@ describe('EntityCollectionReducer', () => {
     });
   });
 
-  // Optimistic SAVE_DELETE_ONE_OPTIMISTIC operation should remove the entity immediately
+  // Optimistic SAVE_DELETE_ONE operation should remove the entity immediately
   // See tests for this below
-  describe('#SAVE_DELETE_ONE_OPTIMISTIC', () => {
-    it('should remove the hero immediately with SAVE_DELETE_ONE_OPTIMISTIC', () => {
+  describe('#SAVE_DELETE_ONE (Optimistic)', () => {
+    it('should remove the hero immediately with SAVE_DELETE_ONE', () => {
       const hero = initialHeroes[0];
       expect(initialCache['Hero'].entities[hero.id]).toBe(hero, 'exists before delete');
 
-      const action = createAction('Hero', EntityOp.SAVE_DELETE_ONE_OPTIMISTIC, hero);
+      const action = createAction('Hero', EntityOp.SAVE_DELETE_ONE, hero, { isOptimistic: true });
 
       const state = entityReducer(initialCache, action);
       const collection = state['Hero'];
@@ -495,11 +607,11 @@ describe('EntityCollectionReducer', () => {
       expect(collection.loading).toBe(true, 'loading on');
     });
 
-    it('should remove the hero-by-id immediately with SAVE_DELETE_ONE_OPTIMISTIC', () => {
+    it('should remove the hero-by-id immediately with SAVE_DELETE_ONE', () => {
       const hero = initialHeroes[0];
       expect(initialCache['Hero'].entities[hero.id]).toBe(hero, 'exists before delete');
 
-      const action = createAction('Hero', EntityOp.SAVE_DELETE_ONE_OPTIMISTIC, hero.id);
+      const action = createAction('Hero', EntityOp.SAVE_DELETE_ONE, hero.id, { isOptimistic: true });
 
       const state = entityReducer(initialCache, action);
       const collection = state['Hero'];
@@ -509,12 +621,13 @@ describe('EntityCollectionReducer', () => {
     });
 
     // No compensating action on error (yet)
-    it('should NOT restore the hero with SAVE_DELETE_ONE_OPTIMISTIC_ERROR', () => {
+    it('should NOT restore the hero with SAVE_DELETE_ONE_ERROR', () => {
       const initialEntities = initialCache['Hero'].entities;
       const action = createAction(
         'Hero',
         EntityOp.SAVE_DELETE_ONE_ERROR,
-        { id: 13, name: 'Deleted' } // Pretend optimistically deleted this hero
+        { id: 13, name: 'Deleted' }, // Pretend optimistically deleted this hero
+        { isOptimistic: true }
       );
 
       const state = entityReducer(initialCache, action);
@@ -523,12 +636,13 @@ describe('EntityCollectionReducer', () => {
       expect(collection.loading).toBe(false, 'loading off');
     });
 
-    it('should only turn loading flag off with SAVE_DELETE_ONE_OPTIMISTIC_SUCCESS', () => {
+    it('should only turn loading flag off with SAVE_DELETE_ONE_SUCCESS', () => {
       const initialEntities = initialCache['Hero'].entities;
       const action = createAction(
         'Hero',
         EntityOp.SAVE_DELETE_ONE_SUCCESS,
-        { id: 13, name: 'Deleted' } // Pretend optimistically deleted this hero
+        { id: 13, name: 'Deleted' }, // Pretend optimistically deleted this hero
+        { isOptimistic: true }
       );
 
       const state = entityReducer(initialCache, action);
@@ -541,9 +655,9 @@ describe('EntityCollectionReducer', () => {
   // Pessimistic SAVE_UPDATE_ONE operation should not touch the entities until success
   // See tests for this below
 
-  describe('#SAVE_UPDATE_ONE_OPTIMISTIC', () => {
+  describe('#SAVE_UPDATE_ONE (Optimistic)', () => {
     function createTestAction(hero: Update<Hero>) {
-      return createAction('Hero', EntityOp.SAVE_UPDATE_ONE_OPTIMISTIC, hero);
+      return createAction('Hero', EntityOp.SAVE_UPDATE_ONE, hero, { isOptimistic: true });
     }
 
     it('should update existing entity in collection', () => {
@@ -625,9 +739,9 @@ describe('EntityCollectionReducer', () => {
     });
   });
 
-  describe('#SAVE_UPDATE_ONE_OPTIMISTIC_SUCCESS', () => {
+  describe('#SAVE_UPDATE_ONE_SUCCESS (Optimistic)', () => {
     function createTestAction(hero: Update<Hero>) {
-      return createAction('Hero', EntityOp.SAVE_UPDATE_ONE_OPTIMISTIC_SUCCESS, hero);
+      return createAction('Hero', EntityOp.SAVE_UPDATE_ONE_SUCCESS, hero, { isOptimistic: true });
     }
 
     it('should update existing entity in collection', () => {
@@ -657,7 +771,7 @@ describe('EntityCollectionReducer', () => {
     });
 
     // Changed in v6. It used to add a new entity.
-    it('should add new hero to collection', () => {
+    it('should NOT add new hero to collection', () => {
       const hero: Hero = { id: 13, name: 'New One', power: 'Strong' };
       const action = createTestAction(toHeroUpdate(hero));
       const state = entityReducer(initialCache, action);
@@ -915,11 +1029,7 @@ describe('EntityCollectionReducer', () => {
 
   describe('"Do nothing" save actions', () => {
     describe('ADD', () => {
-      [
-        EntityOp.SAVE_ADD_ONE,
-        EntityOp.SAVE_ADD_ONE_ERROR,
-        EntityOp.SAVE_ADD_ONE_OPTIMISTIC_ERROR // no compensation
-      ].forEach(op => testAddNoop(op));
+      [EntityOp.SAVE_ADD_ONE_ERROR].forEach(op => testAddNoop(op));
 
       function testAddNoop(op: EntityOp) {
         const hero: Hero = { id: 2, name: 'B+' };
@@ -930,10 +1040,7 @@ describe('EntityCollectionReducer', () => {
 
     describe('DELETE', () => {
       [
-        EntityOp.SAVE_DELETE_ONE,
-        EntityOp.SAVE_DELETE_ONE_ERROR,
-        EntityOp.SAVE_DELETE_ONE_OPTIMISTIC_SUCCESS,
-        EntityOp.SAVE_DELETE_ONE_OPTIMISTIC_ERROR // no compensation
+        EntityOp.SAVE_DELETE_ONE_ERROR // no compensation
       ].forEach(op => testDeleteNoop(op));
 
       function testDeleteNoop(op: EntityOp) {
@@ -943,12 +1050,7 @@ describe('EntityCollectionReducer', () => {
     });
 
     describe('UPDATE (when HTTP update returned nothing)', () => {
-      [
-        EntityOp.SAVE_UPDATE_ONE,
-        EntityOp.SAVE_UPDATE_ONE_ERROR,
-        EntityOp.SAVE_UPDATE_ONE_OPTIMISTIC_SUCCESS,
-        EntityOp.SAVE_UPDATE_ONE_OPTIMISTIC_ERROR // no compensation
-      ].forEach(op => testUpdateNoop(op));
+      [EntityOp.SAVE_UPDATE_ONE_ERROR].forEach(op => testUpdateNoop(op));
 
       function testUpdateNoop(op: EntityOp) {
         const hero: Hero = { id: 2, name: 'B+' };
@@ -962,9 +1064,9 @@ describe('EntityCollectionReducer', () => {
     });
 
     function shouldOnlySetLoadingFlag(action: EntityAction) {
-      const expectedLoadingFlag = !/error|success/i.test(action.payload.op);
+      const expectedLoadingFlag = !/error|success/i.test(action.payload.entityOp);
 
-      it(`#${action.payload.op} should only set loading to ${expectedLoadingFlag}`, () => {
+      it(`#${action.payload.entityOp} should only set loading to ${expectedLoadingFlag}`, () => {
         // Flag should be true when op starts, false after error or success
         const initialCollection = initialCache['Hero'];
         const newCollection = entityReducer(initialCache, action)['Hero'];
@@ -1056,7 +1158,7 @@ describe('EntityCollectionReducer', () => {
     /** Make Hero collection readonly except for QUERY_LOAD  */
     function createReadOnlyHeroReducer(adapter: EntityAdapter<Hero>) {
       return function heroReducer(collection: EntityCollection<Hero>, action: EntityAction): EntityCollection<Hero> {
-        switch (action.payload.op) {
+        switch (action.payload.entityOp) {
           case EntityOp.QUERY_LOAD:
             return collection.loading ? collection : { ...collection, loading: true };
 
@@ -1073,7 +1175,7 @@ describe('EntityCollectionReducer', () => {
           }
 
           default:
-            throw new Error(`${action.payload.op} is an illegal operation for the "Hero" collection`);
+            throw new Error(`${action.payload.entityOp} is an illegal operation for the "Hero" collection`);
         }
       };
     }
